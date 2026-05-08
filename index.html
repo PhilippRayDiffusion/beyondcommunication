@@ -36,12 +36,6 @@
       overflow-x: hidden;
     }
 
-    /* ── 3D CANVAS ── */
-    #hero3d {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      z-index: 0; pointer-events: none;
-    }
     .hero > *:not(#hero3d) { position: relative; z-index: 1; }
 
     /* ── SCROLLBAR ── */
@@ -94,12 +88,22 @@
 
     /* ── HERO ── */
     .hero {
-      min-height: 100vh;
+      height: 100vh;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       text-align: center;
-      padding: calc(64px + 3rem) 6% 4rem;
+      padding: 0 6%;
       position: relative; overflow: hidden;
+    }
+
+    /* ── 3D canvas fixed to viewport ── */
+    #hero3d {
+      position: fixed !important;
+      top: 0; left: 0;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 0;
+      pointer-events: none;
     }
 
     /* animated gradient orbs */
@@ -925,8 +929,7 @@
 
   // ── Resize ──
   function resize() {
-    const hero = document.querySelector('.hero');
-    const w = hero.offsetWidth, h = hero.offsetHeight;
+    const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
