@@ -36,6 +36,14 @@
       overflow-x: hidden;
     }
 
+    /* ── 3D CANVAS ── */
+    #hero3d {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      z-index: 0; pointer-events: none;
+    }
+    .hero > *:not(#hero3d) { position: relative; z-index: 1; }
+
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -502,6 +510,7 @@
 
 <!-- ══ HERO ══ -->
 <section class="hero">
+  <canvas id="hero3d"></canvas>
   <div class="orb orb1"></div>
   <div class="orb orb2"></div>
   <div class="orb orb3"></div>
@@ -806,6 +815,176 @@
       e.target.reset();
     }, 3500);
   }
+</script>
+
+<!-- ══ THREE.JS 3D HERO ══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  const canvas = document.getElementById('hero3d');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 5);
+
+  // ── Noise helper (simplex-like with sin/cos) ──
+  function noise(x, y, z) {
+    return Math.sin(x * 1.3 + z) * Math.cos(y * 0.9 + z) +
+           Math.sin(y * 1.7 + x * 0.5) * 0.5 +
+           Math.cos(z * 2.1 + y * 0.8) * 0.3;
+  }
+
+  // ── Morphing blob sphere ──
+  const geo = new THREE.IcosahedronGeometry(1.6, 5);
+  const posAttr = geo.attributes.position;
+  const basePositions = new Float32Array(posAttr.array);
+
+  const mat = new THREE.MeshPhongMaterial({
+    color: 0x6366f1,
+    emissive: 0x3b0764,
+    emissiveIntensity: 0.4,
+    shininess: 120,
+    wireframe: false,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.FrontSide,
+  });
+  const blob = new THREE.Mesh(geo, mat);
+  scene.add(blob);
+
+  // wireframe overlay
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0xa855f7,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.18,
+  });
+  const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(1.62, 3), wireMat);
+  scene.add(wire);
+
+  // ── Outer ring glow ──
+  const ringGeo = new THREE.TorusGeometry(2.4, 0.012, 8, 120);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.35 });
+  const ring1 = new THREE.Mesh(ringGeo, ringMat);
+  ring1.rotation.x = Math.PI / 3;
+  scene.add(ring1);
+
+  const ring2 = new THREE.Mesh(
+    new THREE.TorusGeometry(2.1, 0.008, 8, 120),
+    new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.25 })
+  );
+  ring2.rotation.x = -Math.PI / 5;
+  ring2.rotation.y = Math.PI / 4;
+  scene.add(ring2);
+
+  // ── Floating particles ──
+  const particleCount = 280;
+  const pGeo = new THREE.BufferGeometry();
+  const pPos = new Float32Array(particleCount * 3);
+  const pPhase = new Float32Array(particleCount);
+
+  for (let i = 0; i < particleCount; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    const r     = 2.8 + Math.random() * 1.8;
+    pPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    pPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    pPos[i * 3 + 2] = r * Math.cos(phi);
+    pPhase[i] = Math.random() * Math.PI * 2;
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  const pMat = new THREE.PointsMaterial({
+    color: 0x22d3ee, size: 0.035,
+    transparent: true, opacity: 0.7, sizeAttenuation: true,
+  });
+  const particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  // ── Lights ──
+  const ambLight = new THREE.AmbientLight(0x6366f1, 0.6);
+  scene.add(ambLight);
+  const pointA = new THREE.PointLight(0xa855f7, 3, 12);
+  pointA.position.set(3, 3, 3);
+  scene.add(pointA);
+  const pointB = new THREE.PointLight(0x22d3ee, 2, 12);
+  pointB.position.set(-3, -2, 2);
+  scene.add(pointB);
+  const pointC = new THREE.PointLight(0xf59e0b, 1.5, 10);
+  pointC.position.set(0, -4, -2);
+  scene.add(pointC);
+
+  // ── Mouse parallax ──
+  let mx = 0, my = 0, tx = 0, ty = 0;
+  document.addEventListener('mousemove', e => {
+    mx = (e.clientX / window.innerWidth  - 0.5) * 2;
+    my = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  // ── Resize ──
+  function resize() {
+    const hero = document.querySelector('.hero');
+    const w = hero.offsetWidth, h = hero.offsetHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ── Animate ──
+  let t = 0;
+  function animate() {
+    requestAnimationFrame(animate);
+    t += 0.008;
+
+    // morph blob vertices
+    for (let i = 0; i < posAttr.count; i++) {
+      const bx = basePositions[i * 3];
+      const by = basePositions[i * 3 + 1];
+      const bz = basePositions[i * 3 + 2];
+      const len = Math.sqrt(bx*bx + by*by + bz*bz);
+      const nx = bx / len, ny = by / len, nz = bz / len;
+      const n = noise(nx * 2 + t, ny * 2 + t * 0.7, nz * 2 + t * 0.5);
+      const r = 1.6 + n * 0.28;
+      posAttr.setXYZ(i, nx * r, ny * r, nz * r);
+    }
+    posAttr.needsUpdate = true;
+    geo.computeVertexNormals();
+
+    // smooth mouse parallax
+    tx += (mx - tx) * 0.04;
+    ty += (my - ty) * 0.04;
+    blob.rotation.y = t * 0.18 + tx * 0.5;
+    blob.rotation.x = t * 0.09 + ty * 0.3;
+    wire.rotation.y = blob.rotation.y * 1.05;
+    wire.rotation.x = blob.rotation.x * 1.05;
+
+    // rings orbit
+    ring1.rotation.z = t * 0.22;
+    ring2.rotation.z = -t * 0.16;
+    ring2.rotation.x = -Math.PI / 5 + Math.sin(t * 0.3) * 0.15;
+
+    // particles drift
+    const pp = pGeo.attributes.position.array;
+    for (let i = 0; i < particleCount; i++) {
+      pp[i * 3 + 1] += Math.sin(t + pPhase[i]) * 0.0015;
+    }
+    pGeo.attributes.position.needsUpdate = true;
+    particles.rotation.y = t * 0.04;
+
+    // light animation
+    pointA.position.x = Math.sin(t * 0.7) * 4;
+    pointA.position.y = Math.cos(t * 0.5) * 3;
+    pointB.position.x = Math.cos(t * 0.6) * -4;
+    pointB.position.z = Math.sin(t * 0.4) * 3;
+
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
 </script>
 </body>
 </html>
